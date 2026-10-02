@@ -39,6 +39,9 @@ venv.bak/
 data/
 logs/
 *.log
+*.db
+*.sqlite
+*.sqlite3
 
 # Unit test / coverage reports
 htmlcov/
