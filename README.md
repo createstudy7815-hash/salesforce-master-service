@@ -6,10 +6,10 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1 Complete ✅
+## Current Status: Milestone Week 1 Core ✅
 
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
-- [x] **Database Models & Schemas**: SQLAlchemy models for `Job` (with full pipeline state machine), `AuditLog`, and `FailedExternalCall` (DLQ).
+- [x] **Database Models & Schemas**: SQLAlchemy model for `Job` (tracking full pipeline state machine).
 - [x] **Salesforce Authentication Client (`SalesforceAuthClient`)**:
   - OAuth 2.0 Username-Password flow
   - OAuth 2.0 JWT Bearer flow (RFC 7523)
@@ -17,11 +17,9 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
   - Credential validation without persisting secrets
 - [x] **Core API Endpoints**:
   - `POST /api/validate-credentials` (Salesforce token grant & identity verification)
-  - `GET /api/key/verify` (HMAC identity & role verification)
   - `GET /api/health` & `GET /health` (DB & MinIO readiness probe)
   - `GET /api/stats` (job statistics counter)
 - [x] **CLI Credential Verification Script**: `scripts/test_login.py`
-- [x] **Resilience & Security**: Bounded retry executor with exponential backoff & jitter; HMAC-SHA256 signature verification.
 - [x] **Automated Test Suite**: 9 unit and integration tests passing (`100%` pass rate).
 
 ---
@@ -35,23 +33,18 @@ salesforce-master-service/
 │   │   └── v1/
 │   │       ├── endpoints/
 │   │       │   ├── credentials.py   # POST /api/validate-credentials
-│   │       │   ├── health.py        # GET /api/health, GET /api/stats
-│   │       │   └── key.py           # GET /api/key/verify
+│   │       │   └── health.py        # GET /api/health, GET /api/stats
 │   │       └── router.py
 │   ├── core/
 │   │   ├── config.py                # Pydantic BaseSettings
 │   │   ├── database.py              # SQLAlchemy engine & session dependency
-│   │   ├── exceptions.py            # Domain exceptions
-│   │   └── security.py              # HMAC signature authentication
+│   │   └── exceptions.py            # Domain exceptions
 │   ├── models/
-│   │   ├── audit.py                 # AuditLog table
-│   │   ├── dlq.py                   # FailedExternalCall table
-│   │   └── job.py                   # Job table with full state machine
+│   │   └── job.py                   # Job table with state machine
 │   ├── schemas/
 │   │   ├── auth.py                  # Credentials & token response schemas
 │   │   └── common.py                # Health & stats schemas
 │   ├── services/
-│   │   ├── retry.py                 # Exponential backoff retry executor
 │   │   └── sf_auth.py               # SalesforceAuthClient
 │   └── main.py                      # FastAPI entrypoint
 ├── scripts/

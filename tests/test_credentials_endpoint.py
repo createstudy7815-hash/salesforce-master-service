@@ -32,9 +32,27 @@ def test_validate_credentials_api_success(client):
         assert data["username"] == "admin@company.com"
 
 
-def test_key_verify_endpoint(client):
-    response = client.get("/api/key/verify")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "valid"
-    assert "role" in data
+def test_validate_credentials_api_failure(client):
+    mock_response = CredentialValidationResponse(
+        valid=False,
+        username="bad@company.com",
+        message="Salesforce authentication failed.",
+        error_detail="invalid_grant: authentication failure"
+    )
+
+    with patch("app.api.v1.endpoints.credentials.sf_auth_client.validate_credentials", new_callable=AsyncMock) as mock_val:
+        mock_val.return_value = mock_response
+
+        payload = {
+            "login_url": "https://login.salesforce.com",
+            "client_id": "bad_client_id",
+            "username": "bad@company.com",
+            "password": "wrong_password"
+        }
+
+        response = client.post("/api/validate-credentials", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is False
+        assert data["message"] == "Salesforce authentication failed."
+

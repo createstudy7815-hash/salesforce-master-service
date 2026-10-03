@@ -6,7 +6,6 @@ import jwt
 import httpx
 
 from app.schemas.auth import SalesforceCredentials, TokenResponse, CredentialValidationResponse
-from app.services.retry import retry_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -64,26 +63,18 @@ class SalesforceAuthClient:
         else:
             payload_data = self._build_password_request(creds)
 
-        async def _request_token() -> TokenResponse:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-                resp = await client.post(token_endpoint, data=payload_data)
-                resp.raise_for_status()
-                data = resp.json()
-                return TokenResponse(
-                    access_token=data["access_token"],
-                    instance_url=data["instance_url"],
-                    id=data.get("id"),
-                    token_type=data.get("token_type", "Bearer"),
-                    issued_at=data.get("issued_at"),
-                    signature=data.get("signature"),
-                )
-
-        token_response = await retry_call_async(
-            _request_token,
-            max_retries=2,
-            delays=[1, 3],
-            op_label="SalesforceAuth:get_access_token"
-        )
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            resp = await client.post(token_endpoint, data=payload_data)
+            resp.raise_for_status()
+            data = resp.json()
+            token_response = TokenResponse(
+                access_token=data["access_token"],
+                instance_url=data["instance_url"],
+                id=data.get("id"),
+                token_type=data.get("token_type", "Bearer"),
+                issued_at=data.get("issued_at"),
+                signature=data.get("signature"),
+            )
 
         self._token_cache[cache_key] = CachedToken(token_response)
         return token_response

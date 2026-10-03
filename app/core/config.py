@@ -47,18 +47,6 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_SECURE: bool = False
 
-    # Resilience & Retries
-    EXTERNAL_CALL_MAX_RETRIES: int = 3
-    EXTERNAL_CALL_RETRY_DELAYS: List[int] = [2, 5, 10]
-    EXTERNAL_CALL_JITTER: bool = True
-    DLQ_PAYLOAD_MAX_BYTES: int = 65536
-
-    # HMAC Authentication
-    HMAC_ENABLED: bool = False
-    HMAC_SECRET_KEY_CORE: str = "dev_coordinator_secret_key_32bytes_min"
-    HMAC_SECRET_KEY_ENGINEER: str = "dev_engineer_secret_key_32bytes_min"
-    HMAC_SIGNATURE_MAX_AGE: int = 300
-
     @field_validator("APP_ENV")
     @classmethod
     def validate_env(cls, v: str) -> str:
