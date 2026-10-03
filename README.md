@@ -6,14 +6,15 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1 Core ✅
+## Current Status: Milestone Week 1 (Half Complete / In Progress) ⏳
 
+### ✅ Completed (First Half of Week 1):
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
-- [x] **Database Models & Schemas**: SQLAlchemy model for `Job` (tracking full pipeline state machine).
+- [x] **Database Models & Schemas**: Initial SQLAlchemy model for `Job` tracking.
 - [x] **Salesforce Authentication Client (`SalesforceAuthClient`)**:
   - OAuth 2.0 Username-Password flow
   - OAuth 2.0 JWT Bearer flow (RFC 7523)
-  - In-memory token caching with near-expiry buffer (zero redundant external calls)
+  - In-memory token caching with near-expiry buffer
   - Credential validation without persisting secrets
 - [x] **Core API Endpoints**:
   - `POST /api/validate-credentials` (Salesforce token grant & identity verification)
@@ -21,6 +22,12 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
   - `GET /api/stats` (job statistics counter)
 - [x] **CLI Credential Verification Script**: `scripts/test_login.py`
 - [x] **Automated Test Suite**: 9 unit and integration tests passing (`100%` pass rate).
+
+### ⏳ Remaining (Second Half of Week 1):
+- [ ] Advanced HMAC-SHA256 signature verification & role enforcement.
+- [ ] Resilience retry engine with bounded exponential backoff & jitter.
+- [ ] Dead-letter queue (DLQ) persistence for failed external calls.
+- [ ] Dedicated audit logging model and service (`AuditLog`).
 
 ---
 
