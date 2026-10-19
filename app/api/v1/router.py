@@ -1,10 +1,16 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, credentials
+from app.api.v1.endpoints import health, credentials, key, audit
 
 api_v1_router = APIRouter()
 
-# Health / Probe endpoints
+# Health / Probe endpoints (Public / unauthenticated)
 api_v1_router.include_router(health.router, tags=["Health"])
 
 # Salesforce Credentials endpoint
 api_v1_router.include_router(credentials.router, tags=["Credentials"])
+
+# HMAC Key verification endpoint
+api_v1_router.include_router(key.router, prefix="/key", tags=["Key"])
+
+# Audit logs and statistics
+api_v1_router.include_router(audit.router, prefix="/audit", tags=["Audit"])

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from app.schemas.auth import SalesforceCredentials, CredentialValidationResponse
 from app.services.sf_auth import sf_auth_client
+from app.core.hmac_auth import hmac_auth_required, HMACClient
 
 router = APIRouter()
 
@@ -13,10 +14,12 @@ router = APIRouter()
     summary="Validate Salesforce credentials without starting a scan"
 )
 async def validate_salesforce_credentials(
-    credentials: SalesforceCredentials
+    credentials: SalesforceCredentials,
+    client: HMACClient = Depends(hmac_auth_required)
 ):
     """
     Validates Salesforce OAuth credentials via real token grant + identity verification.
+    Requires HMAC authentication.
     Does NOT persist credentials or create a scan/job in PostgreSQL.
     """
     result = await sf_auth_client.validate_credentials(credentials)

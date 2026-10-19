@@ -6,28 +6,41 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1 (Half Complete / In Progress) ⏳
+## Current Status: Milestone Week 1 Complete ✅ (Week 2 Next ⏳)
 
-### ✅ Completed (First Half of Week 1):
+### ✅ Completed in Milestone Week 1:
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
-- [x] **Database Models & Schemas**: Initial SQLAlchemy model for `Job` tracking.
+- [x] **Database Models & Schemas**:
+  - `Job` tracking table with 15-state lifecycle and heartbeat tracking.
+  - `AuditLog` table for security and operation auditing.
+  - `FailedExternalCall` table for Dead-Letter Queue (DLQ).
 - [x] **Salesforce Authentication Client (`SalesforceAuthClient`)**:
   - OAuth 2.0 Username-Password flow
   - OAuth 2.0 JWT Bearer flow (RFC 7523)
   - In-memory token caching with near-expiry buffer
   - Credential validation without persisting secrets
+- [x] **HMAC-SHA256 Security & Authentication**:
+  - Dual-key scheme: Coordinator (full access) & Engineer (read-only)
+  - Canonical request signing (`METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(BODY)`)
+  - Nonce replay attack protection and timestamp freshness validation (300s window)
+  - Role enforcement (Engineer role restricted to read-only methods)
+- [x] **Resilience & Dead-Letter Queue (DLQ)**:
+  - Bounded exponential retry engine with backoff and jitter (`retry_call`)
+  - Transient error classification (`is_retryable`) for network timeouts, 408, 429, 500, 502, 503, 504
+  - DLQ persistence with recursive sensitive credential scrubbing (`scrub_payload`)
+- [x] **Audit Logging Service (`AuditService`)**:
+  - Fire-and-forget, non-blocking audit logging
+  - Endpoints to query audit logs with pagination and filters
+  - Rolling-window audit statistics aggregations
 - [x] **Core API Endpoints**:
-  - `POST /api/validate-credentials` (Salesforce token grant & identity verification)
+  - `POST /api/validate-credentials` (HMAC-protected credential verification)
+  - `GET /api/key/verify` (HMAC caller identity & role verification)
+  - `GET /api/audit/logs` & `GET /api/audit/stats` (Audit inspection)
   - `GET /api/health` & `GET /health` (DB & MinIO readiness probe)
   - `GET /api/stats` (job statistics counter)
+  - `GET /` (service status)
 - [x] **CLI Credential Verification Script**: `scripts/test_login.py`
-- [x] **Automated Test Suite**: 9 unit and integration tests passing (`100%` pass rate).
-
-### ⏳ Remaining (Second Half of Week 1):
-- [ ] Advanced HMAC-SHA256 signature verification & role enforcement.
-- [ ] Resilience retry engine with bounded exponential backoff & jitter.
-- [ ] Dead-letter queue (DLQ) persistence for failed external calls.
-- [ ] Dedicated audit logging model and service (`AuditLog`).
+- [x] **Automated Test Suite**: 24 unit and integration tests passing (`100%` pass rate).
 
 ---
 
@@ -39,28 +52,39 @@ salesforce-master-service/
 │   ├── api/
 │   │   └── v1/
 │   │       ├── endpoints/
+│   │       │   ├── audit.py         # GET /api/audit/logs, GET /api/audit/stats
 │   │       │   ├── credentials.py   # POST /api/validate-credentials
-│   │       │   └── health.py        # GET /api/health, GET /api/stats
+│   │       │   ├── health.py        # GET /api/health, GET /api/stats
+│   │       │   └── key.py           # GET /api/key/verify
 │   │       └── router.py
 │   ├── core/
-│   │   ├── config.py                # Pydantic BaseSettings
+│   │   ├── config.py                # Pydantic BaseSettings & environment configs
 │   │   ├── database.py              # SQLAlchemy engine & session dependency
-│   │   └── exceptions.py            # Domain exceptions
+│   │   ├── dlq.py                   # Dead-letter queue with payload scrubbing
+│   │   ├── exceptions.py            # Domain exceptions
+│   │   ├── hmac_auth.py             # HMAC-SHA256 auth middleware & replay guard
+│   │   └── retry.py                 # Exponential backoff retry engine
 │   ├── models/
-│   │   └── job.py                   # Job table with state machine
+│   │   ├── audit.py                 # AuditLog database model
+│   │   ├── dlq.py                   # FailedExternalCall DLQ model
+│   │   └── job.py                   # Job table with 15-state lifecycle
 │   ├── schemas/
 │   │   ├── auth.py                  # Credentials & token response schemas
 │   │   └── common.py                # Health & stats schemas
 │   ├── services/
-│   │   └── sf_auth.py               # SalesforceAuthClient
+│   │   ├── audit.py                 # AuditService logging & stats aggregation
+│   │   └── sf_auth.py               # SalesforceAuthClient with retry & caching
 │   └── main.py                      # FastAPI entrypoint
 ├── scripts/
 │   └── test_login.py                # CLI script to test Salesforce credentials
 ├── tests/
-│   ├── conftest.py                  # Pytest fixtures and in-memory test DB
+│   ├── conftest.py                  # Pytest fixtures, test DB, and HMAC helper
+│   ├── test_audit.py                # Audit log & stats tests
 │   ├── test_credentials_endpoint.py
 │   ├── test_health.py
-│   └── test_sf_auth.py
+│   ├── test_hmac_auth.py            # HMAC security & authorization tests
+│   ├── test_resilience.py           # Retry & DLQ resilience tests
+│   └── test_sf_auth.py              # Salesforce auth client tests
 ├── docker-compose.yml               # PostgreSQL, MinIO, FastAPI app
 ├── Dockerfile
 ├── requirements.txt

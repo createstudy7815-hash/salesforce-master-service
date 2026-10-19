@@ -1,5 +1,7 @@
+import json
 from unittest.mock import AsyncMock, patch
 from app.schemas.auth import CredentialValidationResponse
+from tests.conftest import make_hmac_headers
 
 
 def test_validate_credentials_api_success(client):
@@ -23,8 +25,10 @@ def test_validate_credentials_api_success(client):
             "username": "admin@company.com",
             "password": "secret_password"
         }
+        body_bytes = json.dumps(payload).encode("utf-8")
+        headers = make_hmac_headers("POST", "/api/validate-credentials", body_bytes)
 
-        response = client.post("/api/validate-credentials", json=payload)
+        response = client.post("/api/validate-credentials", content=body_bytes, headers={"Content-Type": "application/json", **headers})
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is True
@@ -49,8 +53,10 @@ def test_validate_credentials_api_failure(client):
             "username": "bad@company.com",
             "password": "wrong_password"
         }
+        body_bytes = json.dumps(payload).encode("utf-8")
+        headers = make_hmac_headers("POST", "/api/validate-credentials", body_bytes)
 
-        response = client.post("/api/validate-credentials", json=payload)
+        response = client.post("/api/validate-credentials", content=body_bytes, headers={"Content-Type": "application/json", **headers})
         assert response.status_code == 200
         data = response.json()
         assert data["valid"] is False

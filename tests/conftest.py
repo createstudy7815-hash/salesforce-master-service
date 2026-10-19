@@ -48,3 +48,32 @@ def client(db_session):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+def make_hmac_headers(
+    method: str,
+    path: str,
+    body: bytes = b"",
+    client_id: str = "coordinator",
+    secret: str = "coordinator-secret-key-sf-master"
+) -> dict:
+    import time
+    import uuid
+    from app.core.hmac_auth import generate_hmac_signature
+
+    ts = str(int(time.time()))
+    nonce = str(uuid.uuid4())
+    sig = generate_hmac_signature(
+        method=method,
+        path=path,
+        timestamp=ts,
+        nonce=nonce,
+        body=body,
+        secret_key=secret
+    )
+    return {
+        "X-SF-Signature": sig,
+        "X-SF-Timestamp": ts,
+        "X-SF-Client-ID": client_id,
+        "X-SF-Nonce": nonce
+    }
