@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import health, credentials, key, audit
+from app.api.v1.endpoints import health, credentials, key, audit, scan, batch
 
 api_v1_router = APIRouter()
 
@@ -14,3 +14,9 @@ api_v1_router.include_router(key.router, prefix="/key", tags=["Key"])
 
 # Audit logs and statistics
 api_v1_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
+
+# Scan coordination & lifecycle endpoints
+api_v1_router.include_router(scan.router, prefix="/scan", tags=["Scan"])
+
+# Bulk API batch metadata endpoint
+api_v1_router.include_router(batch.router, prefix="/batch", tags=["Batch"])

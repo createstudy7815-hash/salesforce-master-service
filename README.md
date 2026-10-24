@@ -6,41 +6,49 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1 Complete ✅ (Week 2 Next ⏳)
+## Current Status: Milestone Week 1 & 2 Complete ✅ (Week 3 Next ⏳)
 
-### ✅ Completed in Milestone Week 1:
+### ✅ Completed in Milestone Week 1 (Setup, Auth & Security):
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
-- [x] **Database Models & Schemas**:
-  - `Job` tracking table with 15-state lifecycle and heartbeat tracking.
-  - `AuditLog` table for security and operation auditing.
-  - `FailedExternalCall` table for Dead-Letter Queue (DLQ).
-- [x] **Salesforce Authentication Client (`SalesforceAuthClient`)**:
-  - OAuth 2.0 Username-Password flow
-  - OAuth 2.0 JWT Bearer flow (RFC 7523)
-  - In-memory token caching with near-expiry buffer
-  - Credential validation without persisting secrets
-- [x] **HMAC-SHA256 Security & Authentication**:
-  - Dual-key scheme: Coordinator (full access) & Engineer (read-only)
-  - Canonical request signing (`METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(BODY)`)
-  - Nonce replay attack protection and timestamp freshness validation (300s window)
-  - Role enforcement (Engineer role restricted to read-only methods)
-- [x] **Resilience & Dead-Letter Queue (DLQ)**:
-  - Bounded exponential retry engine with backoff and jitter (`retry_call`)
-  - Transient error classification (`is_retryable`) for network timeouts, 408, 429, 500, 502, 503, 504
-  - DLQ persistence with recursive sensitive credential scrubbing (`scrub_payload`)
-- [x] **Audit Logging Service (`AuditService`)**:
-  - Fire-and-forget, non-blocking audit logging
-  - Endpoints to query audit logs with pagination and filters
-  - Rolling-window audit statistics aggregations
-- [x] **Core API Endpoints**:
-  - `POST /api/validate-credentials` (HMAC-protected credential verification)
-  - `GET /api/key/verify` (HMAC caller identity & role verification)
-  - `GET /api/audit/logs` & `GET /api/audit/stats` (Audit inspection)
-  - `GET /api/health` & `GET /health` (DB & MinIO readiness probe)
-  - `GET /api/stats` (job statistics counter)
-  - `GET /` (service status)
-- [x] **CLI Credential Verification Script**: `scripts/test_login.py`
-- [x] **Automated Test Suite**: 24 unit and integration tests passing (`100%` pass rate).
+- [x] **Database Models & Schemas**: `Job` table with 15-state lifecycle, `AuditLog` table, `FailedExternalCall` DLQ table.
+- [x] **Salesforce Authentication Client (`SalesforceAuthClient`)**: Username-Password & JWT Bearer flows, in-memory caching, validation.
+- [x] **HMAC-SHA256 Security & Authentication**: Dual-key scheme (Coordinator & Engineer), replay protection, timestamp freshness check.
+- [x] **Resilience & DLQ**: Bounded exponential backoff with jitter (`retry_call`), DLQ persistence with credential scrubbing (`scrub_payload`).
+- [x] **Audit Logging Service (`AuditService`)**: Non-blocking audit logger, audit query API (`/api/audit/logs`), rolling statistics (`/api/audit/stats`).
+
+### ✅ Completed in Milestone Week 2 (Bulk API 2.0 & Data Extraction):
+- [x] **Salesforce Bulk API 2.0 Client (`SalesforceBatchAPIClient`)**:
+  - Submits SOQL query jobs per object (`POST /services/data/vXX.X/jobs/query`).
+  - Polls job state (`UploadComplete`, `InProgress`, `JobComplete`, `Failed`, `Aborted`).
+  - Streams and pages CSV result data (`GET /services/data/vXX.X/jobs/query/{id}/results`).
+  - Remote job cancellation/abortion (`PATCH /services/data/vXX.X/jobs/query/{id}`).
+- [x] **Batch Polling & Coordination Service (`BatchPollingService`)**:
+  - Multi-object batch job submission and state aggregation.
+  - Heartbeat-driven polling loop with configurable intervals and timeouts.
+  - Automatic CSV results downloader with locator-based paging.
+- [x] **Local File Management (`BatchFileService`)**:
+  - Saves raw CSV extractions to `data/scans/{scan_id}/extracted/{object_name}.csv`.
+  - Paginated CSV reader and schema type inferrer.
+  - Disk footprint and record count analyzer; cleanup utilities.
+- [x] **Job State Management (`JobService`)**:
+  - Stage tracking, per-object batch job mapping, heartbeat refresher.
+  - Crash detection mechanism (`detect_crashed_jobs`) for stale heartbeats.
+  - Scan removal and paginated listing.
+- [x] **Extraction Orchestrator (`ExtractionService`)**:
+  - Non-blocking scan initiation (returns 202 Accepted immediately).
+  - Background workflow execution (`Submit` ➔ `Poll` ➔ `Download` ➔ `Extract`).
+  - Crash recovery / resume workflow from last completed stage.
+  - Local and remote cancellation.
+- [x] **Scan & Batch API Routers**:
+  - `POST /api/scan/start`
+  - `GET /api/scan/{id}/status`
+  - `POST /api/scan/{id}/cancel`
+  - `POST /api/scan/{id}/resume`
+  - `GET /api/scan/list`
+  - `GET /api/scan/statistics`
+  - `DELETE /api/scan/{id}/remove`
+  - `GET /api/batch/info`
+- [x] **Automated Test Suite**: **36 unit and integration tests passing (`100%` pass rate)**.
 
 ---
 
@@ -53,9 +61,11 @@ salesforce-master-service/
 │   │   └── v1/
 │   │       ├── endpoints/
 │   │       │   ├── audit.py         # GET /api/audit/logs, GET /api/audit/stats
+│   │       │   ├── batch.py         # GET /api/batch/info
 │   │       │   ├── credentials.py   # POST /api/validate-credentials
 │   │       │   ├── health.py        # GET /api/health, GET /api/stats
-│   │       │   └── key.py           # GET /api/key/verify
+│   │       │   ├── key.py           # GET /api/key/verify
+│   │       │   └── scan.py          # /api/scan/* lifecycle endpoints
 │   │       └── router.py
 │   ├── core/
 │   │   ├── config.py                # Pydantic BaseSettings & environment configs
@@ -70,21 +80,31 @@ salesforce-master-service/
 │   │   └── job.py                   # Job table with 15-state lifecycle
 │   ├── schemas/
 │   │   ├── auth.py                  # Credentials & token response schemas
-│   │   └── common.py                # Health & stats schemas
+│   │   ├── batch.py                 # Bulk API batch metadata schema
+│   │   ├── common.py                # Health & stats schemas
+│   │   └── scan.py                  # Scan request/response schemas
 │   ├── services/
 │   │   ├── audit.py                 # AuditService logging & stats aggregation
-│   │   └── sf_auth.py               # SalesforceAuthClient with retry & caching
+│   │   ├── batch_file_service.py    # Local CSV dataset storage manager
+│   │   ├── batch_polling_service.py # Bulk API polling & download manager
+│   │   ├── extraction_service.py    # Top-level scan orchestrator
+│   │   ├── job_service.py           # Job tracking & state machine service
+│   │   ├── sf_auth.py               # SalesforceAuthClient with retry & caching
+│   │   └── sf_batch_client.py       # Salesforce Bulk API 2.0 query client
 │   └── main.py                      # FastAPI entrypoint
 ├── scripts/
 │   └── test_login.py                # CLI script to test Salesforce credentials
 ├── tests/
 │   ├── conftest.py                  # Pytest fixtures, test DB, and HMAC helper
 │   ├── test_audit.py                # Audit log & stats tests
+│   ├── test_batch_file_service.py   # CSV file storage & schema tests
 │   ├── test_credentials_endpoint.py
 │   ├── test_health.py
 │   ├── test_hmac_auth.py            # HMAC security & authorization tests
 │   ├── test_resilience.py           # Retry & DLQ resilience tests
-│   └── test_sf_auth.py              # Salesforce auth client tests
+│   ├── test_scan_workflow.py        # Scan lifecycle & pipeline workflow tests
+│   ├── test_sf_auth.py              # Salesforce auth client tests
+│   └── test_sf_batch_client.py      # Bulk API 2.0 client tests
 ├── docker-compose.yml               # PostgreSQL, MinIO, FastAPI app
 ├── Dockerfile
 ├── requirements.txt

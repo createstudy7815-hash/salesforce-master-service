@@ -25,6 +25,15 @@ def setup_test_db():
     Base.metadata.drop_all(bind=engine)
 
 
+@pytest.fixture(autouse=True)
+def ensure_hmac_enabled_for_tests():
+    from app.core.config import settings
+    orig = settings.HMAC_ENABLED
+    settings.HMAC_ENABLED = True
+    yield
+    settings.HMAC_ENABLED = orig
+
+
 @pytest.fixture
 def db_session():
     connection = engine.connect()
