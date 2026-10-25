@@ -185,6 +185,101 @@ class JobService:
                 db.close()
 
     @staticmethod
+    def store_entity_record_counts(
+        scan_id: str,
+        counts_by_object: Dict[str, int],
+        db: Optional[Session] = None
+    ) -> Optional[Job]:
+        """Record entity record counts on Job."""
+        return JobService.update_extraction_info(scan_id, counts_by_object, db=db)
+
+    @staticmethod
+    def start_normalization(scan_id: str, db: Optional[Session] = None) -> Optional[Job]:
+        """Transition job status to NORMALIZING."""
+        return JobService.update_job_status(scan_id, JobStatus.NORMALIZING, db=db)
+
+    @staticmethod
+    def complete_normalization(
+        scan_id: str,
+        normalization_stats: Dict[str, Any],
+        db: Optional[Session] = None
+    ) -> Optional[Job]:
+        """Mark job as NORMALIZED and record table normalization statistics."""
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+        try:
+            job = db.query(Job).filter(Job.id == scan_id).first()
+            if job:
+                job.normalization_stats = normalization_stats
+                job.normalized_at = utc_now()
+                job.status = JobStatus.NORMALIZED
+                job.updated_at = utc_now()
+                job.last_heartbeat = utc_now()
+                db.commit()
+                db.refresh(job)
+            return job
+        finally:
+            if close_db:
+                db.close()
+
+    @staticmethod
+    def start_minio_upload(scan_id: str, db: Optional[Session] = None) -> Optional[Job]:
+        """Transition job status to UPLOADING_TO_MINIO."""
+        return JobService.update_job_status(scan_id, JobStatus.UPLOADING_TO_MINIO, db=db)
+
+    @staticmethod
+    def complete_minio_upload(
+        scan_id: str,
+        minio_object_keys: List[str],
+        mark_completed: bool = True,
+        db: Optional[Session] = None
+    ) -> Optional[Job]:
+        """Record uploaded MinIO object keys and transition to COMPLETED or UPLOADED_TO_MINIO."""
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+        try:
+            job = db.query(Job).filter(Job.id == scan_id).first()
+            if job:
+                job.minio_object_keys = minio_object_keys
+                job.minio_uploaded_at = utc_now()
+                job.status = JobStatus.COMPLETED if mark_completed else JobStatus.UPLOADED_TO_MINIO
+                job.updated_at = utc_now()
+                job.last_heartbeat = utc_now()
+                db.commit()
+                db.refresh(job)
+            return job
+        finally:
+            if close_db:
+                db.close()
+
+    @staticmethod
+    def cleanup_old_jobs(days_old: int = 30, db: Optional[Session] = None) -> List[str]:
+        """Delete scans older than days_old and their local storage folders."""
+        from app.services.batch_file_service import batch_file_service
+        close_db = False
+        if db is None:
+            db = SessionLocal()
+            close_db = True
+        try:
+            cutoff = utc_now() - timedelta(days=days_old)
+            old_jobs = db.query(Job).filter(Job.created_at < cutoff).all()
+            deleted_ids = []
+            for j in old_jobs:
+                batch_file_service.cleanup_extracted_files(j.id)
+                deleted_ids.append(j.id)
+                db.delete(j)
+            if deleted_ids:
+                db.commit()
+            return deleted_ids
+        finally:
+            if close_db:
+                db.close()
+
+    @staticmethod
     def fail_job(scan_id: str, error: str, db: Optional[Session] = None) -> Optional[Job]:
         """Mark job as FAILED with error message."""
         return JobService.update_job_status(scan_id, JobStatus.FAILED, error_message=error, db=db)

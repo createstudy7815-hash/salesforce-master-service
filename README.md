@@ -6,7 +6,7 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1 & 2 Complete ✅ (Week 3 Next ⏳)
+## Current Status: Milestone Week 1, 2 & 3 Complete ✅ (Week 4 Next ⏳)
 
 ### ✅ Completed in Milestone Week 1 (Setup, Auth & Security):
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
@@ -48,7 +48,44 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
   - `GET /api/scan/statistics`
   - `DELETE /api/scan/{id}/remove`
   - `GET /api/batch/info`
-- [x] **Automated Test Suite**: **36 unit and integration tests passing (`100%` pass rate)**.
+
+### ✅ Completed in Milestone Week 3 (Data Normalization & Clean Tables):
+- [x] **Base Normalization Framework (`BaseNormalizer`)**:
+  - Case-insensitive field resolution (`safe_get`).
+  - Robust type casting and sanitization (`clean_string`, `clean_bool`, `clean_int`, `clean_float`, `clean_date`).
+  - Column and table statistics aggregator (`get_statistics`).
+  - Native **Apache Parquet** (`pyarrow` / `pandas`) and **JSON** file exporters (`save_to_files`).
+- [x] **Per-Object Normalizers**:
+  - `AccountNormalizer` ➔ `accounts`, `account_addresses` (normalized billing and shipping addresses), `account_teams`.
+  - `ContactNormalizer` ➔ `contacts`, `contact_roles`.
+  - `OpportunityNormalizer` ➔ `opportunities`, `opportunity_line_items`, `opportunity_contact_roles`.
+  - `LeadNormalizer` ➔ `leads` (clean lead status, conversion metrics, ratings).
+  - `CaseNormalizer` ➔ `cases`, `case_comments`.
+  - `TaskEventNormalizer` ➔ `tasks`, `events` (calendar vs task differentiation).
+  - `CampaignNormalizer` ➔ `campaigns`, `campaign_members`.
+  - `UserNormalizer` ➔ `users`.
+- [x] **Normalization Service & Catalog Registry (`NormalizationService`)**:
+  - End-to-end normalization orchestrator (`normalize_scan`): transitions job to `NORMALIZING` ➔ reads extracted CSVs ➔ flattens records into target relational tables ➔ saves Parquet/JSON ➔ updates job to `NORMALIZED` with row counts and file sizes.
+  - Single object normalizer (`normalize_single_object`).
+  - Table discovery and metadata inspection (`list_normalized_tables`).
+  - Supported objects catalog (`get_supported_objects`).
+- [x] **MinIO Dataset Publisher (`MinIOClient`)**:
+  - Partitioned storage key generator: `salesforce/{table_name}/glynac_organization_id={org_id}/processing_date={date}/{table}.parquet`.
+  - Retries with backoff and automatic DLQ logging.
+- [x] **Core Utility Suite (`app/core/utils.py`)**:
+  - `deep_serialize` (recursive JSON-safe type conversion).
+  - `calculate_duration` (ISO datetime delta in seconds).
+  - `build_pagination_info` (standard pagination envelope).
+  - `Encrypter` (Fernet-based symmetric encryption at rest).
+- [x] **Normalization & Maintenance API Routers**:
+  - `POST /api/normalization/{scan_id}/normalize`
+  - `POST /api/normalization/{scan_id}/normalize/{object_name}`
+  - `GET /api/normalization/{scan_id}/tables`
+  - `GET /api/normalization/supported-objects`
+  - `POST /api/normalize/{scan_id}` (Section 6 alias)
+  - `POST /api/maintenance/cleanup` (old scan cleanup)
+  - `POST /api/maintenance/detect-crashed` (heartbeat crash detector)
+- [x] **Automated Test Suite**: **61 unit and integration tests passing (`100%` pass rate)**.
 
 ---
 
@@ -60,57 +97,78 @@ salesforce-master-service/
 │   ├── api/
 │   │   └── v1/
 │   │       ├── endpoints/
-│   │       │   ├── audit.py         # GET /api/audit/logs, GET /api/audit/stats
-│   │       │   ├── batch.py         # GET /api/batch/info
-│   │       │   ├── credentials.py   # POST /api/validate-credentials
-│   │       │   ├── health.py        # GET /api/health, GET /api/stats
-│   │       │   ├── key.py           # GET /api/key/verify
-│   │       │   └── scan.py          # /api/scan/* lifecycle endpoints
+│   │       │   ├── audit.py           # GET /api/audit/logs, GET /api/audit/stats
+│   │       │   ├── batch.py           # GET /api/batch/info
+│   │       │   ├── credentials.py     # POST /api/validate-credentials
+│   │       │   ├── health.py          # GET /api/health, GET /api/stats
+│   │       │   ├── key.py             # GET /api/key/verify
+│   │       │   ├── maintenance.py     # POST /api/maintenance/cleanup, detect-crashed
+│   │       │   ├── normalization.py   # /api/normalization/* endpoints & /normalize/{id}
+│   │       │   └── scan.py            # /api/scan/* lifecycle endpoints
 │   │       └── router.py
 │   ├── core/
-│   │   ├── config.py                # Pydantic BaseSettings & environment configs
-│   │   ├── database.py              # SQLAlchemy engine & session dependency
-│   │   ├── dlq.py                   # Dead-letter queue with payload scrubbing
-│   │   ├── exceptions.py            # Domain exceptions
-│   │   ├── hmac_auth.py             # HMAC-SHA256 auth middleware & replay guard
-│   │   └── retry.py                 # Exponential backoff retry engine
+│   │   ├── config.py                  # Pydantic BaseSettings & environment configs
+│   │   ├── database.py                # SQLAlchemy engine & session dependency
+│   │   ├── dlq.py                     # Dead-letter queue with payload scrubbing
+│   │   ├── exceptions.py              # Domain exceptions
+│   │   ├── hmac_auth.py               # HMAC-SHA256 auth middleware & replay guard
+│   │   ├── retry.py                   # Exponential backoff retry engine
+│   │   └── utils.py                   # Serialization, duration, pagination & Fernet encrypter
 │   ├── models/
-│   │   ├── audit.py                 # AuditLog database model
-│   │   ├── dlq.py                   # FailedExternalCall DLQ model
-│   │   └── job.py                   # Job table with 15-state lifecycle
+│   │   ├── audit.py                   # AuditLog database model
+│   │   ├── dlq.py                     # FailedExternalCall DLQ model
+│   │   └── job.py                     # Job table with 15-state lifecycle
 │   ├── schemas/
-│   │   ├── auth.py                  # Credentials & token response schemas
-│   │   ├── batch.py                 # Bulk API batch metadata schema
-│   │   ├── common.py                # Health & stats schemas
-│   │   └── scan.py                  # Scan request/response schemas
+│   │   ├── auth.py                    # Credentials & token response schemas
+│   │   ├── batch.py                   # Bulk API batch metadata schema
+│   │   ├── common.py                  # Health & stats schemas
+│   │   ├── normalization.py           # Normalization request & response schemas
+│   │   └── scan.py                    # Scan request/response schemas
 │   ├── services/
-│   │   ├── audit.py                 # AuditService logging & stats aggregation
-│   │   ├── batch_file_service.py    # Local CSV dataset storage manager
-│   │   ├── batch_polling_service.py # Bulk API polling & download manager
-│   │   ├── extraction_service.py    # Top-level scan orchestrator
-│   │   ├── job_service.py           # Job tracking & state machine service
-│   │   ├── sf_auth.py               # SalesforceAuthClient with retry & caching
-│   │   └── sf_batch_client.py       # Salesforce Bulk API 2.0 query client
-│   └── main.py                      # FastAPI entrypoint
+│   │   ├── normalization/
+│   │   │   ├── __init__.py            # Normalizer registry & supported objects catalog
+│   │   │   ├── base.py                # BaseNormalizer with Parquet/JSON writers
+│   │   │   ├── accounts.py            # AccountNormalizer -> accounts, addresses, teams
+│   │   │   ├── contacts.py            # ContactNormalizer -> contacts, roles
+│   │   │   ├── opportunities.py       # OpportunityNormalizer -> opps, line items, roles
+│   │   │   ├── leads.py               # LeadNormalizer -> leads
+│   │   │   ├── cases.py               # CaseNormalizer -> cases, comments
+│   │   │   ├── tasks_events.py        # TaskEventNormalizer -> tasks, events
+│   │   │   ├── campaigns.py           # CampaignNormalizer -> campaigns, members
+│   │   │   └── users.py               # UserNormalizer -> users
+│   │   ├── audit.py                   # AuditService logging & stats aggregation
+│   │   ├── batch_file_service.py      # Extracted & normalized dataset storage manager
+│   │   ├── batch_polling_service.py   # Bulk API polling & download manager
+│   │   ├── extraction_service.py      # Top-level scan orchestrator
+│   │   ├── job_service.py             # Job tracking & state machine service
+│   │   ├── minio_client.py            # MinIO S3 dataset publisher with retry & DLQ
+│   │   ├── normalization_service.py   # Normalization orchestration service
+│   │   ├── sf_auth.py                 # SalesforceAuthClient with retry & caching
+│   │   └── sf_batch_client.py         # Salesforce Bulk API 2.0 query client
+│   └── main.py                        # FastAPI entrypoint
 ├── scripts/
-│   └── test_login.py                # CLI script to test Salesforce credentials
+│   └── test_login.py                  # CLI script to test Salesforce credentials
 ├── tests/
-│   ├── conftest.py                  # Pytest fixtures, test DB, and HMAC helper
-│   ├── test_audit.py                # Audit log & stats tests
-│   ├── test_batch_file_service.py   # CSV file storage & schema tests
+│   ├── conftest.py                    # Pytest fixtures, test DB, and HMAC helper
+│   ├── test_audit.py                  # Audit log & stats tests
+│   ├── test_batch_file_service.py     # CSV file storage & schema tests
 │   ├── test_credentials_endpoint.py
 │   ├── test_health.py
-│   ├── test_hmac_auth.py            # HMAC security & authorization tests
-│   ├── test_resilience.py           # Retry & DLQ resilience tests
-│   ├── test_scan_workflow.py        # Scan lifecycle & pipeline workflow tests
-│   ├── test_sf_auth.py              # Salesforce auth client tests
-│   └── test_sf_batch_client.py      # Bulk API 2.0 client tests
-├── docker-compose.yml               # PostgreSQL, MinIO, FastAPI app
+│   ├── test_hmac_auth.py              # HMAC security & authorization tests
+│   ├── test_maintenance.py            # Maintenance & crashed scan detection tests
+│   ├── test_normalization_endpoints.py# Normalization API endpoint tests
+│   ├── test_normalizers.py            # Object normalizers & Parquet/JSON tests
+│   ├── test_resilience.py             # Retry & DLQ resilience tests
+│   ├── test_scan_workflow.py          # Scan lifecycle & pipeline workflow tests
+│   ├── test_sf_auth.py                # Salesforce auth client tests
+│   ├── test_sf_batch_client.py        # Bulk API 2.0 client tests
+│   └── test_utils.py                  # Serialization, pagination & Fernet tests
+├── docker-compose.yml                 # PostgreSQL, MinIO, FastAPI app
 ├── Dockerfile
 ├── requirements.txt
 ├── .env.example
 ├── pytest.ini
-└── DESIGN.md                        # Master specification document
+└── DESIGN.md                          # Master specification document
 ```
 
 ---

@@ -110,6 +110,55 @@ class BatchFileService:
 
         return schema
 
+    def get_normalized_dir(self, scan_id: str) -> str:
+        """
+        Get or create directory data/scans/{scan_id}/normalized/
+        """
+        normalized_dir = os.path.join(self.base_dir, scan_id, "normalized")
+        os.makedirs(normalized_dir, exist_ok=True)
+        return normalized_dir
+
+    def list_normalized_tables(self, scan_id: str) -> List[Dict[str, Any]]:
+        """
+        List all normalized Parquet/JSON table files for a scan with file sizes and row counts.
+        """
+        normalized_dir = os.path.join(self.base_dir, scan_id, "normalized")
+        if not os.path.exists(normalized_dir):
+            return []
+
+        tables = []
+        for filename in sorted(os.listdir(normalized_dir)):
+            if filename.endswith(".parquet") or filename.endswith(".json"):
+                full_path = os.path.join(normalized_dir, filename)
+                name, ext = os.path.splitext(filename)
+                fmt = ext.lstrip(".").lower()
+                size_bytes = os.path.getsize(full_path)
+
+                record_count = 0
+                try:
+                    if fmt == "parquet":
+                        import pyarrow.parquet as pq
+                        meta = pq.read_metadata(full_path)
+                        record_count = meta.num_rows
+                    elif fmt == "json":
+                        import json
+                        with open(full_path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            record_count = len(data) if isinstance(data, list) else 1
+                except Exception as exc:
+                    logger.warning(f"Could not read row count for {full_path}: {exc}")
+                    record_count = 0
+
+                tables.append({
+                    "table_name": name,
+                    "file_name": filename,
+                    "format": fmt,
+                    "size_bytes": size_bytes,
+                    "record_count": record_count,
+                    "file_path": full_path
+                })
+        return tables
+
     def cleanup_extracted_files(self, scan_id: str) -> bool:
         """
         Delete scan data folder.
