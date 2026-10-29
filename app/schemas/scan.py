@@ -16,6 +16,22 @@ class ScanStartRequest(BaseModel):
         None,
         description="Optional custom SOQL query per object (e.g. {'Account': 'SELECT Id, Name FROM Account'})"
     )
+    auto_normalize: Optional[bool] = Field(
+        False,
+        description="Whether to automatically run normalization after extraction completes"
+    )
+    upload_to_minio: Optional[bool] = Field(
+        False,
+        description="Whether to automatically upload normalized tables to MinIO"
+    )
+    output_format: Optional[str] = Field(
+        "parquet",
+        description="Format for normalized tables: 'parquet' or 'json'"
+    )
+    processing_date: Optional[str] = Field(
+        None,
+        description="Optional processing date for MinIO partitioning (YYYY-MM-DD)"
+    )
 
 
 class ScanStartResponse(BaseModel):
@@ -38,6 +54,10 @@ class ScanStatusResponse(BaseModel):
     file_paths: Optional[List[str]] = None
     file_sizes: Optional[Dict[str, int]] = None
     entity_record_counts: Optional[Dict[str, int]] = None
+    normalized_at: Optional[datetime] = None
+    normalization_stats: Optional[Dict[str, Any]] = None
+    minio_uploaded_at: Optional[datetime] = None
+    minio_object_keys: Optional[List[str]] = None
     pipeline_progress: Dict[str, Any]
     error_message: Optional[str] = None
 

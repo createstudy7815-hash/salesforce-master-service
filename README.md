@@ -6,7 +6,7 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
 
 ---
 
-## Current Status: Milestone Week 1, 2 & 3 Complete ✅ (Week 4 Next ⏳)
+## Project Status: Milestone Weeks 1, 2, 3 & 4 Complete ✅ (100% Complete)
 
 ### ✅ Completed in Milestone Week 1 (Setup, Auth & Security):
 - [x] **Project Scaffolding**: FastAPI architecture, configuration (`pydantic-settings`), Dockerfile, and `docker-compose.yml` (PostgreSQL 15 + MinIO).
@@ -69,9 +69,6 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
   - Single object normalizer (`normalize_single_object`).
   - Table discovery and metadata inspection (`list_normalized_tables`).
   - Supported objects catalog (`get_supported_objects`).
-- [x] **MinIO Dataset Publisher (`MinIOClient`)**:
-  - Partitioned storage key generator: `salesforce/{table_name}/glynac_organization_id={org_id}/processing_date={date}/{table}.parquet`.
-  - Retries with backoff and automatic DLQ logging.
 - [x] **Core Utility Suite (`app/core/utils.py`)**:
   - `deep_serialize` (recursive JSON-safe type conversion).
   - `calculate_duration` (ISO datetime delta in seconds).
@@ -85,7 +82,24 @@ This service pulls data out of Salesforce on demand using the Salesforce Bulk AP
   - `POST /api/normalize/{scan_id}` (Section 6 alias)
   - `POST /api/maintenance/cleanup` (old scan cleanup)
   - `POST /api/maintenance/detect-crashed` (heartbeat crash detector)
-- [x] **Automated Test Suite**: **61 unit and integration tests passing (`100%` pass rate)**.
+
+### ✅ Completed in Milestone Week 4 (Storage Upload, Resilience, E2E Testing & Submission):
+- [x] **MinIO / S3 Publishing Engine (`MinIOClient`)**:
+  - Uploads normalized Parquet/JSON datasets using partitioned key format:
+    `salesforce/{table_name}/glynac_organization_id={org_id}/processing_date={date}/{table}.parquet`.
+  - Automatic bucket provisioning (`ensure_bucket_exists`).
+  - Directory uploads, single file downloads, prefix listing, and deletion.
+  - Non-blocking socket probe for cluster health and reachability checks.
+- [x] **Resilience & Retry Engine Refinement (`retry_call_sync` & `retry_call`)**:
+  - Synchronous and asynchronous retry engines with exponential backoff and jitter.
+  - Automatic fallback to DLQ (`FailedExternalCall` table) with credential scrubbing on retry exhaustion.
+- [x] **Automated End-to-End Scan Pipeline**:
+  - Optional automated chain in `POST /api/scan/start` (`auto_normalize=True`, `upload_to_minio=True`).
+  - Complete 15-state lifecycle traversal:
+    `PENDING` ➔ `BATCH_REQUESTED` ➔ `BATCH_PROCESSING` ➔ `BATCH_READY` ➔ `DOWNLOADING` ➔ `DOWNLOADED` ➔ `EXTRACTING` ➔ `EXTRACTED` ➔ `NORMALIZING` ➔ `NORMALIZED` ➔ `UPLOADING_TO_MINIO` ➔ `UPLOADED_TO_MINIO` ➔ `COMPLETED`.
+- [x] **Multi-Stage Crash Recovery & Resumption**:
+  - Resumption from any point of interruption: `download` ➔ `extraction` ➔ `normalization` ➔ `MinIO upload`.
+- [x] **Automated Test Suite**: **76 unit, integration, and end-to-end tests passing (`100%` pass rate)**.
 
 ---
 
@@ -100,7 +114,7 @@ salesforce-master-service/
 │   │       │   ├── audit.py           # GET /api/audit/logs, GET /api/audit/stats
 │   │       │   ├── batch.py           # GET /api/batch/info
 │   │       │   ├── credentials.py     # POST /api/validate-credentials
-│   │       │   ├── health.py          # GET /api/health, GET /api/stats
+│   │       │   ├── health.py          # GET /api/health (DB + MinIO), GET /api/stats
 │   │       │   ├── key.py             # GET /api/key/verify
 │   │       │   ├── maintenance.py     # POST /api/maintenance/cleanup, detect-crashed
 │   │       │   ├── normalization.py   # /api/normalization/* endpoints & /normalize/{id}
@@ -112,7 +126,7 @@ salesforce-master-service/
 │   │   ├── dlq.py                     # Dead-letter queue with payload scrubbing
 │   │   ├── exceptions.py              # Domain exceptions
 │   │   ├── hmac_auth.py               # HMAC-SHA256 auth middleware & replay guard
-│   │   ├── retry.py                   # Exponential backoff retry engine
+│   │   ├── retry.py                   # Async & sync retry engines with backoff
 │   │   └── utils.py                   # Serialization, duration, pagination & Fernet encrypter
 │   ├── models/
 │   │   ├── audit.py                   # AuditLog database model
@@ -152,10 +166,12 @@ salesforce-master-service/
 │   ├── conftest.py                    # Pytest fixtures, test DB, and HMAC helper
 │   ├── test_audit.py                  # Audit log & stats tests
 │   ├── test_batch_file_service.py     # CSV file storage & schema tests
-│   ├── test_credentials_endpoint.py
-│   ├── test_health.py
+│   ├── test_credentials_endpoint.py   # Credential validation tests
+│   ├── test_end_to_end_pipeline.py    # Full E2E pipeline & crash resumption tests
+│   ├── test_health.py                 # Health and service stats tests
 │   ├── test_hmac_auth.py              # HMAC security & authorization tests
 │   ├── test_maintenance.py            # Maintenance & crashed scan detection tests
+│   ├── test_minio_client.py           # MinIO client, S3 paths, retries & DLQ tests
 │   ├── test_normalization_endpoints.py# Normalization API endpoint tests
 │   ├── test_normalizers.py            # Object normalizers & Parquet/JSON tests
 │   ├── test_resilience.py             # Retry & DLQ resilience tests
@@ -196,28 +212,63 @@ pip install -r requirements.txt
 pytest -v
 ```
 
-### 4. Test Salesforce Login (CLI)
-You can test your Salesforce account credentials directly using the CLI utility:
-
+### 4. Running with Docker Compose
+To run the entire system including PostgreSQL 15, MinIO, and the API microservice:
 ```bash
-python scripts/test_login.py \
-    --username your_user@example.com \
-    --password your_password \
-    --security-token your_token \
-    --client-id your_connected_app_client_id \
-    --client-secret your_connected_app_client_secret
+docker compose up --build -d
 ```
+Services available:
+- FastAPI API & Swagger UI: `http://localhost:8000/docs`
+- MinIO Object Storage Console: `http://localhost:9001` (user: `minioadmin`, pass: `minioadmin`)
+- PostgreSQL: `localhost:5432` (`salesforce_master`)
 
-Or for JWT Bearer Flow:
-```bash
-python scripts/test_login.py \
-    --username your_user@example.com \
-    --client-id your_connected_app_client_id \
-    --jwt-key-path path/to/server.key
-```
-
-### 5. Start the API Server
+### 5. Start Local API Server
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 Open **[http://localhost:8000/docs](http://localhost:8000/docs)** to view the interactive Swagger API documentation.
+
+---
+
+## Final Submission Write-up
+
+### 1. What Was Built
+Across the four development milestones, we implemented a complete, production-ready microservice that extracts, normalizes, and publishes Salesforce data:
+1. **Security & Ingestion**:
+   - Dual-key HMAC-SHA256 authentication protecting all non-public endpoints.
+   - Nonce-based replay attack mitigation and timestamp window validation.
+   - Credentials are never stored permanently at rest — tokens are cached in memory and discarded upon expiry.
+2. **Bulk API 2.0 Extraction Engine**:
+   - Submits SOQL query jobs for all standard/custom Salesforce objects (`Account`, `Contact`, `Opportunity`, `Lead`, `Case`, `Task`, `Event`, `Campaign`, `User`).
+   - Polls asynchronously with configurable backoff and heartbeats.
+   - Streams CSV results locally using cursor/locator-based paging.
+3. **Normalization & File Formats**:
+   - Transforms complex, nested Salesforce records into relational tables.
+   - Generates production **Apache Parquet** (via `pyarrow`/`pandas`) and **JSON** files with full column metadata and row statistics.
+4. **Publishing to MinIO / S3**:
+   - Saves clean Parquet tables to MinIO using partitioned path layouts:
+     `salesforce/{table_name}/glynac_organization_id={org_id}/processing_date={date}/{table}.parquet`.
+5. **State Tracking & Resumption**:
+   - 15-state tracking lifecycle in PostgreSQL (`Job` table).
+   - Crash detection for stale heartbeats.
+   - Resumption from the exact stage that was previously reached (`download` ➔ `extraction` ➔ `normalization` ➔ `MinIO upload`).
+6. **Graceful Error Handling & DLQ**:
+   - Transient network/HTTP errors trigger exponential backoff with jitter (`retry_call_sync` and `retry_call`).
+   - Exhausted retries automatically write to the `failed_external_calls` Dead Letter Queue (DLQ) with credential scrubbing.
+
+### 2. Verification & Testing
+- **Automated Test Coverage**: **76 unit, integration, and end-to-end tests** covering:
+  - Salesforce OAuth & JWT flows
+  - Bulk API 2.0 query creation, polling, and abort
+  - HMAC security, expired timestamps, and replay guard
+  - Object normalizers for 8 Salesforce entities
+  - Parquet and JSON file generation and schema inference
+  - MinIO partitioned uploads, directory sync, and DLQ error handling
+  - Full end-to-end scan pipeline and stage resumption
+  - Liveness/readiness health probes for DB and MinIO
+- **Pass Rate**: `100%` (76/76 passed).
+
+### 3. Out of Scope / Intentionally Excluded (Per Section 9 of DESIGN.md)
+- No deduplication or diffing logic: every run produces a fresh, consistent set of tables.
+- No PII masking or data redaction: data passes through as-is from Salesforce.
+- No message queues or complex broker architectures: simple, robust orchestration via FastAPI, PostgreSQL, and MinIO.

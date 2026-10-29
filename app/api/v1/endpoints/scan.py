@@ -80,6 +80,10 @@ def get_scan_status(
         file_paths=job.file_paths,
         file_sizes=job.file_sizes,
         entity_record_counts=job.entity_record_counts,
+        normalized_at=job.normalized_at,
+        normalization_stats=job.normalization_stats,
+        minio_uploaded_at=job.minio_uploaded_at,
+        minio_object_keys=job.minio_object_keys,
         pipeline_progress=pipeline_progress,
         error_message=job.error_message
     )
